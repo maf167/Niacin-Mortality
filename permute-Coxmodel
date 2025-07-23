@@ -1,0 +1,76 @@
+
+##
+## Vibration of Effects For the Manuscript "Dose-Specific Effects of Niacin Supplementation on Mortality Risk: A U-Shaped Curve"
+##
+
+## Author: Marc Ferrell, MD, PhD
+
+# Containers
+myHR <- matrix(nrow=0, ncol=12)
+myP  <- matrix(nrow=0, ncol=12)
+colnames(myHR) <- c("HR", colnames(covar3))
+colnames(myP) <- c("P", colnames(covar3))
+
+## For each number of covariates N
+for( i in 1:ncol(covar3)){
+  print(i)
+  # For each comb of covariates N choose k, compute HR and P
+  my_comb <- combn(1:ncol(covar3), i)
+  for(j in 1:ncol(my_comb)){
+    themodel <- robcov(coxph(Surv(permth_int, mortstat) ~ DSQTNIACcat + 
+                               covar3[,my_comb[,j],drop = FALSE], data = dat))
+    theHR <- 
+      exp(coef(themodel))["DSQTNIACcat1"]
+    
+    theP <- summary(themodel)$coefficients["DSQTNIACcat1", "Pr(>|z|)"]
+    
+    myHR <- rbind(myHR,
+                  c(theHR, as.numeric(1:11 %in% my_comb[,j]))
+                  )
+    myP <- rbind(myP,
+                  c(theP, as.numeric(1:11 %in% my_comb[,j]))
+    )
+  }
+}
+
+# Vibration table
+res <- as.data.frame(cbind(myHR, myP[,1]))
+names(res)[13] <- "P"
+
+#save(res, file="niacin-mortality-permute-models-071325.Rmd")
+
+# Back calculate number of covariates in each model (faster outside of loop)
+res$k <- sapply(1:nrow(res), function(x) {
+  (sum(res[x,2:12]))
+})
+
+
+# Median HR and median P
+mysum <- res %>% group_by(k) %>% summarise(hr = median(HR), p = median(P))
+
+# Add univariate model
+mysum <- rbind(mysum, data.frame(k=0, hr=0.663, p=2.11e-10))
+
+### RHR
+## For Niacin, 1.26
+quantile(res$HR, 0.99) / quantile(res$HR, 0.01)
+
+### RP
+## For Niacin, 8.12
+log10(quantile(res$P, 0.99)) - log10(quantile(res$P, 0.01))
+
+### Median HR 0.74
+### Median P 2.6e-6
+
+ggplot(as.data.frame(cbind(myHR, myP[,1])), aes(x=HR, y=-log10(V13))) + 
+  geom_point(alpha = 0.1) +
+  geom_density_2d() +
+  geom_line(data = mysum, aes(x=hr, y=-log10(p)), color="red") +
+  geom_point(data = mysum, aes(x=hr, y=-log10(p)), color="red") +
+  geom_vline(xintercept = quantile(res$HR, c(0.01, 0.5, 0.99)), lty="dashed") +
+  geom_hline(yintercept = quantile(-log10(res$P), c(0.01, 0.5, 0.99)), lty="dashed") +
+  scale_y_continuous(name = "-log(P)", limits = c(0,12), breaks = seq(0,12,2)) +
+  scale_x_continuous(name = "Hazard Ratio") +
+  theme_classic()
+
+
